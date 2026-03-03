@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "ipredict_token",
+    "leaderboard",
+    "referral_registry",
+    "prediction_market",
+    "integration_tests",
+]
+
+[workspace.dependencies]
+fuels = { version = "0.76", features = ["fuel-core-lib"] }
+tokio = { version = "1", features = ["rt", "macros"] }
