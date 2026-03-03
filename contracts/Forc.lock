@@ -1,0 +1,41 @@
+[[package]]
+name = "ipredict_token"
+source = "member"
+dependencies = [
+    "libraries",
+    "std",
+]
+
+[[package]]
+name = "leaderboard"
+source = "member"
+dependencies = [
+    "libraries",
+    "std",
+]
+
+[[package]]
+name = "libraries"
+source = "member"
+dependencies = ["std"]
+
+[[package]]
+name = "prediction_market"
+source = "member"
+dependencies = [
+    "libraries",
+    "std",
+]
+
+[[package]]
+name = "referral_registry"
+source = "member"
+dependencies = [
+    "libraries",
+    "std",
+]
+
+[[package]]
+name = "std"
+version = "0.69.1"
+source = "registry+std?0.69.1#QmbPunScay4xpfHKpxQ71dFKXSiyJuPP8P8YhgX5Dkmzm9!"

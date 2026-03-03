@@ -1,5 +1,3 @@
-import { getLeaderboardContract, addressIdentity, extractAddress, bnToNumber } from "@/services/fuel";
-import { getDisplayName } from "@/services/referral";
 import * as cache from "@/services/cache";
 import type { PlayerStats } from "@/types";
 
@@ -35,12 +33,10 @@ function safe(v: unknown): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
-// ── Read functions ────────────────────────────────────────────────────────────
+// ── Read functions (via API routes) ───────────────────────────────────────────
 
 /**
  * Get top N players from the leaderboard.
- * The contract returns Vec<PlayerEntry> where PlayerEntry is a struct
- * { address: Identity, points: u64 }. Fuel SDK auto-decodes via ABI types.
  */
 export async function getTopPlayers(limit: number): Promise<PlayerStats[]> {
   const cacheKey = CACHE_TOP_PLAYERS(limit);
@@ -48,67 +44,49 @@ export async function getTopPlayers(limit: number): Promise<PlayerStats[]> {
   if (cached) return cached;
 
   try {
-    const contract = await getLeaderboardContract();
-    const { value: raw } = await contract.functions.get_top_players(limit).get();
+    // Step 1: Get top players (address + points) from API
+    const res = await fetch(`/api/leaderboard?action=top&limit=${limit}`);
+    if (!res.ok) return [];
+    const entries: { address: string; points: number }[] = await res.json();
+    if (!Array.isArray(entries) || entries.length === 0) return [];
 
-    if (!raw || !Array.isArray(raw) || raw.length === 0) return [];
+    // Step 2: Batch-fetch display names and stats for each player
+    const statsTasks = entries.map(({ address: addr, points: pts }) => async () => {
+      let displayName = "";
+      let totalBets = 0;
+      let wonBets = 0;
+      let lostBets = 0;
 
-    // Extract player entries from the typed response
-    const entries = raw.map((item) => ({
-      addr: extractAddress(item.address),
-      pts: typeof item.points === "object" && item.points.toNumber
-        ? item.points.toNumber()
-        : safe(item.points),
-    }));
-
-    // Batch-resolve display names with concurrency limit of 5
-    const nameMap = new Map<string, string>();
-    const nameTasks = entries.map(({ addr }) => async () => {
       try {
-        const name = await getDisplayName(addr);
-        nameMap.set(addr, name || "");
-      } catch {
-        nameMap.set(addr, "");
-      }
-    });
-    await batchAll(nameTasks, 5);
+        const nameRes = await fetch(`/api/referral?action=displayName&address=${encodeURIComponent(addr)}`);
+        if (nameRes.ok) {
+          const nameData = await nameRes.json();
+          displayName = nameData.displayName || "";
+        }
+      } catch { /* skip */ }
 
-    // Batch-fetch full stats for each player
-    const statsTasks = entries.map(({ addr, pts }) => async () => {
       try {
-        const c = await getLeaderboardContract();
-        const { value: statsRaw } = await c.functions
-          .get_stats(addressIdentity(addr))
-          .get();
+        const statsRes = await fetch(`/api/leaderboard?action=stats&address=${encodeURIComponent(addr)}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          totalBets = safe(statsData.totalBets);
+          wonBets = safe(statsData.wonBets);
+          lostBets = safe(statsData.lostBets);
+        }
+      } catch { /* skip */ }
 
-        const totalBets = safe(statsRaw.total_bets);
-        const wonBets = safe(statsRaw.won_bets);
-        const lostBets = safe(statsRaw.lost_bets);
-
-        return {
-          address: addr,
-          displayName: nameMap.get(addr) || "",
-          points: pts,
-          totalBets,
-          wonBets,
-          lostBets,
-          winRate: totalBets > 0 ? (wonBets / totalBets) * 100 : 0,
-        } satisfies PlayerStats;
-      } catch {
-        return {
-          address: addr,
-          displayName: nameMap.get(addr) || "",
-          points: pts,
-          totalBets: 0,
-          wonBets: 0,
-          lostBets: 0,
-          winRate: 0,
-        } satisfies PlayerStats;
-      }
+      return {
+        address: addr,
+        displayName,
+        points: pts,
+        totalBets,
+        wonBets,
+        lostBets,
+        winRate: totalBets > 0 ? (wonBets / totalBets) * 100 : 0,
+      } satisfies PlayerStats;
     });
 
     const players = await batchAll(statsTasks, 5);
-
     cache.set(cacheKey, players, LEADERBOARD_TTL);
     return players;
   } catch (err) {
@@ -126,25 +104,23 @@ export async function getStats(
   if (cached) return cached;
 
   try {
-    const contract = await getLeaderboardContract();
-    const { value: raw } = await contract.functions
-      .get_stats(addressIdentity(userAddress))
-      .get();
+    const statsRes = await fetch(`/api/leaderboard?action=stats&address=${encodeURIComponent(userAddress)}`);
+    if (!statsRes.ok) return null;
+    const raw = await statsRes.json();
 
-    const points = typeof raw.points === "object" && raw.points.toNumber
-      ? raw.points.toNumber()
-      : safe(raw.points);
-    const totalBets = safe(raw.total_bets);
-    const wonBets = safe(raw.won_bets);
-    const lostBets = safe(raw.lost_bets);
+    const points = safe(raw.points);
+    const totalBets = safe(raw.totalBets);
+    const wonBets = safe(raw.wonBets);
+    const lostBets = safe(raw.lostBets);
 
-    // Also resolve display name
     let displayName = "";
     try {
-      displayName = await getDisplayName(userAddress);
-    } catch {
-      // silently fail
-    }
+      const nameRes = await fetch(`/api/referral?action=displayName&address=${encodeURIComponent(userAddress)}`);
+      if (nameRes.ok) {
+        const nameData = await nameRes.json();
+        displayName = nameData.displayName || "";
+      }
+    } catch { /* skip */ }
 
     const stats: PlayerStats = {
       address: userAddress,
@@ -169,11 +145,10 @@ export async function getPoints(userAddress: string): Promise<number> {
   if (cached !== null) return cached;
 
   try {
-    const contract = await getLeaderboardContract();
-    const { value } = await contract.functions
-      .get_points(addressIdentity(userAddress))
-      .get();
-    const pts = bnToNumber(value);
+    const res = await fetch(`/api/leaderboard?action=points&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const pts = safe(data.points);
     cache.set(cacheKey, pts, STATS_TTL);
     return pts;
   } catch {
@@ -188,12 +163,12 @@ export async function getRank(userAddress: string): Promise<number> {
   if (cached !== null) return cached;
 
   try {
-    const contract = await getLeaderboardContract();
-    const { value } = await contract.functions
-      .get_rank(addressIdentity(userAddress))
-      .get();
-    cache.set(cacheKey, value, LEADERBOARD_TTL);
-    return value;
+    const res = await fetch(`/api/leaderboard?action=rank&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const rank = safe(data.rank);
+    cache.set(cacheKey, rank, LEADERBOARD_TTL);
+    return rank;
   } catch {
     return 0;
   }

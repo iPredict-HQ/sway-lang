@@ -1,11 +1,6 @@
 import type { Account } from "fuels";
-import { MARKET_CONTRACT_ID } from "@/config/network";
 import {
   getMarketContract,
-  addressIdentity,
-  extractAddress,
-  bnToNumber,
-  bnToEth,
   ethToBaseUnits,
   getBaseAssetId,
   executeContractCall,
@@ -54,31 +49,32 @@ async function batchAll<T>(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseMarket(raw: any): Market {
+  // Data comes from API route as plain JSON (numbers already converted)
   return {
-    id: typeof raw.id === "object" && raw.id.toNumber ? raw.id.toNumber() : Number(raw.id),
+    id: Number(raw.id),
     question: raw.question,
-    imageUrl: raw.image_url,
-    endTime: typeof raw.end_time === "object" && raw.end_time.toNumber ? raw.end_time.toNumber() : Number(raw.end_time),
-    totalYes: (typeof raw.total_yes === "object" && raw.total_yes.toNumber ? raw.total_yes.toNumber() : Number(raw.total_yes)) / 1e9,
-    totalNo: (typeof raw.total_no === "object" && raw.total_no.toNumber ? raw.total_no.toNumber() : Number(raw.total_no)) / 1e9,
-    resolved: raw.resolved,
-    outcome: raw.outcome,
-    cancelled: raw.cancelled,
-    creator: extractAddress(raw.creator),
-    betCount: typeof raw.bet_count === "object" && raw.bet_count.toNumber ? raw.bet_count.toNumber() : Number(raw.bet_count),
+    imageUrl: raw.imageUrl ?? raw.image_url ?? "",
+    endTime: Number(raw.endTime ?? raw.end_time ?? 0),
+    totalYes: Number(raw.totalYes ?? raw.total_yes ?? 0),
+    totalNo: Number(raw.totalNo ?? raw.total_no ?? 0),
+    resolved: raw.resolved ?? false,
+    outcome: raw.outcome ?? false,
+    cancelled: raw.cancelled ?? false,
+    creator: raw.creator ?? "",
+    betCount: Number(raw.betCount ?? raw.bet_count ?? 0),
   };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseBet(raw: any): Bet {
   return {
-    amount: (typeof raw.amount === "object" && raw.amount.toNumber ? raw.amount.toNumber() : Number(raw.amount)) / 1e9,
-    isYes: raw.is_yes,
-    claimed: raw.claimed,
+    amount: Number(raw.amount ?? 0),
+    isYes: raw.isYes ?? raw.is_yes ?? false,
+    claimed: raw.claimed ?? false,
   };
 }
 
-// ── Read functions ────────────────────────────────────────────────────────────
+// ── Read functions (via API routes — server-side contract reads) ──────────────
 
 /** Fetch single market by ID */
 export async function getMarket(marketId: number): Promise<Market | null> {
@@ -86,9 +82,11 @@ export async function getMarket(marketId: number): Promise<Market | null> {
   if (cached) return cached;
 
   try {
-    const contract = await getMarketContract();
-    const { value } = await contract.functions.get_market(marketId).get();
-    const market = parseMarket(value);
+    const res = await fetch(`/api/markets?id=${marketId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) return null;
+    const market = parseMarket(data);
     cache.set(CACHE_MARKET(marketId), market, MARKET_TTL);
     return market;
   } catch {
@@ -96,33 +94,23 @@ export async function getMarket(marketId: number): Promise<Market | null> {
   }
 }
 
-/** Fetch all markets — iterate 1..marketCount, batch-resolve */
+/** Fetch all markets via API route */
 export async function getMarkets(): Promise<Market[]> {
   const cached = cache.get<Market[]>(CACHE_MARKETS);
   if (cached) return cached;
 
   try {
-    const contract = await getMarketContract();
-    const { value: countBn } = await contract.functions.get_market_count().get();
-    const total = bnToNumber(countBn);
-    if (total === 0) return [];
-
-    // Fetch markets in batches of 5
-    const tasks = Array.from({ length: total }, (_, i) => {
-      const id = i + 1;
-      return async () => {
-        try {
-          const c = await getMarketContract();
-          const { value } = await c.functions.get_market(id).get();
-          return parseMarket(value);
-        } catch {
-          return null;
-        }
-      };
-    });
-
-    const results = await batchAll(tasks, 5);
-    const markets = results.filter((m): m is Market => m !== null);
+    const res = await fetch("/api/markets");
+    if (!res.ok) {
+      console.error("[iPredict] getMarkets: API returned", res.status);
+      return [];
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) {
+      console.error("[iPredict] getMarkets: unexpected response", data);
+      return [];
+    }
+    const markets = data.map(parseMarket);
 
     // Cache individual markets too
     for (const m of markets) {
@@ -130,11 +118,11 @@ export async function getMarkets(): Promise<Market[]> {
     }
     cache.set(CACHE_MARKETS, markets, MARKET_TTL);
     return markets;
-  } catch {
+  } catch (err) {
+    console.error("[iPredict] getMarkets: fetch error:", err);
     return [];
   }
 }
-
 /** Fetch a user's bet on a specific market */
 export async function getBet(
   marketId: number,
@@ -145,11 +133,11 @@ export async function getBet(
   if (cached) return cached;
 
   try {
-    const contract = await getMarketContract();
-    const { value } = await contract.functions
-      .get_bet(marketId, addressIdentity(userAddress))
-      .get();
-    const bet = parseBet(value);
+    const res = await fetch(`/api/markets/data?action=bet&marketId=${marketId}&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) return null;
+    const bet = parseBet(data);
     cache.set(cacheKey, bet, BET_TTL);
     return bet;
   } catch {
@@ -166,12 +154,10 @@ export async function getOdds(
   if (cached) return cached;
 
   try {
-    const contract = await getMarketContract();
-    const { value } = await contract.functions.get_odds(marketId).get();
-    const odds = {
-      yesPercent: value.yes_percent,
-      noPercent: value.no_percent,
-    };
+    const res = await fetch(`/api/markets/data?action=odds&marketId=${marketId}`);
+    if (!res.ok) return { yesPercent: 50, noPercent: 50 };
+    const odds = await res.json();
+    if (odds.error) return { yesPercent: 50, noPercent: 50 };
     cache.set(cacheKey, odds, MARKET_TTL);
     return odds;
   } catch {
@@ -185,9 +171,10 @@ export async function getAccumulatedFees(): Promise<number> {
   if (cached !== null) return cached;
 
   try {
-    const contract = await getMarketContract();
-    const { value } = await contract.functions.get_accumulated_fees().get();
-    const fees = bnToEth(value);
+    const res = await fetch("/api/markets/data?action=fees");
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const fees = data.fees ?? 0;
     cache.set(CACHE_FEES, fees, MARKET_TTL);
     return fees;
   } catch {

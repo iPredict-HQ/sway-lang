@@ -1,5 +1,5 @@
 import type { Account } from "fuels";
-import { getReferralContract, addressIdentity, extractAddress, bnToNumber, executeContractCall } from "@/services/fuel";
+import { getReferralContract, addressIdentity, executeContractCall } from "@/services/fuel";
 import * as cache from "@/services/cache";
 import type { TransactionResult } from "@/types";
 
@@ -47,7 +47,7 @@ export async function registerReferral(
   return result;
 }
 
-// ── Read functions ────────────────────────────────────────────────────────────
+// ── Read functions (via API routes) ───────────────────────────────────────────
 
 /** Get the referrer address for a user (or null if none) */
 export async function getReferrer(
@@ -58,16 +58,10 @@ export async function getReferrer(
   if (cached !== undefined && cached !== null) return cached;
 
   try {
-    const contract = await getReferralContract();
-    const { value } = await contract.functions
-      .get_referrer(addressIdentity(userAddress))
-      .get();
-    // Option<Identity> — undefined means None
-    if (!value) {
-      cache.set(cacheKey, null, REF_TTL);
-      return null;
-    }
-    const address = extractAddress(value);
+    const res = await fetch(`/api/referral?action=referrer&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const address = data.referrer || null;
     cache.set(cacheKey, address, REF_TTL);
     return address;
   } catch {
@@ -84,11 +78,10 @@ export async function getDisplayName(
   if (cached !== null) return cached;
 
   try {
-    const contract = await getReferralContract();
-    const { value } = await contract.functions
-      .get_display_name(addressIdentity(userAddress))
-      .get();
-    const name = value || "";
+    const res = await fetch(`/api/referral?action=displayName&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return "";
+    const data = await res.json();
+    const name = data.displayName || "";
     cache.set(cacheKey, name, REF_TTL);
     return name;
   } catch {
@@ -105,12 +98,11 @@ export async function getReferralCount(
   if (cached !== null) return cached;
 
   try {
-    const contract = await getReferralContract();
-    const { value } = await contract.functions
-      .get_referral_count(addressIdentity(userAddress))
-      .get();
-    cache.set(cacheKey, value, REF_TTL);
-    return value;
+    const res = await fetch(`/api/referral?action=count&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return 0;
+    const data = await res.json();
+    cache.set(cacheKey, data.count ?? 0, REF_TTL);
+    return data.count ?? 0;
   } catch {
     return 0;
   }
@@ -123,13 +115,11 @@ export async function getEarnings(userAddress: string): Promise<number> {
   if (cached !== null) return cached;
 
   try {
-    const contract = await getReferralContract();
-    const { value } = await contract.functions
-      .get_earnings(addressIdentity(userAddress))
-      .get();
-    const earnings = bnToNumber(value);
-    cache.set(cacheKey, earnings, REF_TTL);
-    return earnings;
+    const res = await fetch(`/api/referral?action=earnings&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return 0;
+    const data = await res.json();
+    cache.set(cacheKey, data.earnings ?? 0, REF_TTL);
+    return data.earnings ?? 0;
   } catch {
     return 0;
   }
@@ -142,12 +132,11 @@ export async function hasReferrer(userAddress: string): Promise<boolean> {
   if (cached !== null) return cached;
 
   try {
-    const contract = await getReferralContract();
-    const { value } = await contract.functions
-      .has_referrer(addressIdentity(userAddress))
-      .get();
-    cache.set(cacheKey, value, REF_TTL);
-    return value;
+    const res = await fetch(`/api/referral?action=hasReferrer&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    cache.set(cacheKey, data.hasReferrer ?? false, REF_TTL);
+    return data.hasReferrer ?? false;
   } catch {
     return false;
   }
@@ -160,12 +149,11 @@ export async function isRegistered(userAddress: string): Promise<boolean> {
   if (cached !== null) return cached;
 
   try {
-    const contract = await getReferralContract();
-    const { value } = await contract.functions
-      .is_registered(addressIdentity(userAddress))
-      .get();
-    cache.set(cacheKey, value, REF_TTL);
-    return value;
+    const res = await fetch(`/api/referral?action=isRegistered&address=${encodeURIComponent(userAddress)}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    cache.set(cacheKey, data.isRegistered ?? false, REF_TTL);
+    return data.isRegistered ?? false;
   } catch {
     return false;
   }

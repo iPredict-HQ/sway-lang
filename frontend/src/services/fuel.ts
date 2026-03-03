@@ -96,6 +96,27 @@ export function bnToNumber(bn: BN): number {
   return bn.toNumber();
 }
 
+// TAI64 epoch offset — Fuel's timestamp() returns TAI64 format
+const TAI64_EPOCH = BigInt("4611686018427387904");
+
+/**
+ * Safely convert a Fuel BN to a JS number.
+ * Handles TAI64 timestamps (> 53 bits) by converting to Unix seconds.
+ */
+export function safeBnToNumber(bn: BN): number {
+  try {
+    return bn.toNumber();
+  } catch {
+    // Value exceeds 53 bits — likely a TAI64 timestamp
+    const big = BigInt(bn.toString());
+    if (big > TAI64_EPOCH) {
+      return Number(big - TAI64_EPOCH);
+    }
+    // Fallback: return as-is (may lose precision)
+    return Number(big);
+  }
+}
+
 /**
  * Convert a Fuel BN (base units, 9 decimals) to human-readable ETH.
  */
