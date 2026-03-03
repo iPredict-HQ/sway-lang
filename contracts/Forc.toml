@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "libraries",
+    "ipredict_token",
+    "leaderboard",
+    "referral_registry",
+    "prediction_market",
+]
