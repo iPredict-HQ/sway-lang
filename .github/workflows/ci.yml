@@ -1,0 +1,81 @@
+name: iPredict CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Frontend lint, test, and build ──────────────────────────────────
+  lint-test-build:
+    name: Frontend (Node 20)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Fuel toolchain
+        run: |
+          curl -fsSL https://install.fuel.network | sh
+          echo "$HOME/.fuelup/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build production bundle
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/.next
+          retention-days: 7
+
+  # ── Job 2: Sway contract check & test ──────────────────────────────────────
+  contract-check:
+    name: Contracts (Sway)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Fuel toolchain
+        run: |
+          curl -fsSL https://install.fuel.network | sh
+          echo "$HOME/.fuelup/bin" >> $GITHUB_PATH
+          fuelup toolchain install latest
+          fuelup default latest
+
+      - name: Cache Fuel builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.forc
+            contracts/*/out
+          key: ${{ runner.os }}-forc-${{ hashFiles('contracts/**/Forc.toml') }}
+          restore-keys: ${{ runner.os }}-forc-
+
+      - name: Build all contracts
+        working-directory: contracts
+        run: forc build
+
+      - name: Run contract tests
+        working-directory: contracts
+        run: forc test

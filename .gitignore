@@ -1,0 +1,55 @@
+# ── Rust / Sway / Fuel ─────────────────────────────────────────────────────────
+target/
+**/*.rs.bk
+*.wasm
+!contracts/*.wasm
+out/
+
+# ── Fuel CLI / Wallet ─────────────────────────────────────────────────────────
+.fuel/
+.fuelup/
+**/*-storage_slots.json
+
+# ── Cargo ──────────────────────────────────────────────────────────────────────
+# Lock file is checked in for binaries, but not for libraries.
+# Since these are cdylib contracts (deployed artifacts), we keep the lockfile.
+# Uncomment the next line if you want to ignore it:
+# Cargo.lock
+
+# ── Node.js / Next.js ─────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# ── Environment & Secrets ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.secret
+**/private-key*
+scripts/deploy-and-init.mjs
+
+# ── IDE / Editor ───────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Soroban CLI (legacy) ───────────────────────────────────────────────────────
+.soroban/
+
+# ── Misc ───────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vercel
