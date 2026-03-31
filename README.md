@@ -21,19 +21,8 @@
 
 ## Demo Video
 
-🎬 [Watch Full MVP Flow on Loom](https://loom.com/share/ipredict-demo) — *Wallet connect → browse markets → place bet → view leaderboard → claim reward → referral flow*
+🎬 [Watch Full MVP Flow on YouTube](https://www.youtube.com/@iPredict_HQ) — *Wallet connect → browse markets → place bet → view leaderboard → claim reward → referral flow*
 
-## Screenshots
-
-| Landing Page | Markets Browser | Market Detail |
-|:---:|:---:|:---:|
-| ![Landing](docs/screenshots/landing.png) | ![Markets](docs/screenshots/markets.png) | ![Detail](docs/screenshots/detail.png) |
-
-| Betting Panel | Leaderboard | Profile |
-|:---:|:---:|:---:|
-| ![Betting](docs/screenshots/betting.png) | ![Leaderboard](docs/screenshots/leaderboard.png) | ![Profile](docs/screenshots/profile.png) |
-
----
 
 ## Features
 
